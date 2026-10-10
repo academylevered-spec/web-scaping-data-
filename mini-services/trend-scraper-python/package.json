@@ -1,0 +1,11 @@
+{
+  "name": "trend-scraper-python",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun supervisor.ts",
+    "start": "bun supervisor.ts",
+    "once": "python3 -u run_once.py",
+    "smoke": "python3 -u run_once.py --smoke"
+  }
+}

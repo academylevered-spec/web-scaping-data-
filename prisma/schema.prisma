@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model TrendVideo {
+  id              String   @id @default(cuid())
+  /// v6: unik bersama country (lihat @@unique di bawah) — bukan unik sendiri
+  tiktokId        String
+  videoUrl        String
+  authorHandle    String
+  authorName      String?
+  authorAvatar    String?
+  thumbnail       String
+  caption         String
+  hashtags        String   @default("")
+  country         String
+  category        String
+  sourceCategory  String   @default("")
+  duration        String
+  durationSec     Int      @default(0)
+  views           Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  shares          Int      @default(0)
+  sales           Int      @default(0)
+  gmv             Float    @default(0)
+  trafficType     String   @default("organic")
+  isShopProduct   Boolean  @default(false)
+  shopUrl         String?
+  productTitle    String?
+  productPriceMin Float?
+  productPriceMax Float?
+  productSold     Int?
+  productImage    String?
+  trendingScore   Float    @default(0)
+  /// Batas bawah epoch-detik waktu posting video (dari window scrape terakhir)
+  createTimeMin   Int      @default(0)
+  /// Batas atas epoch-detik waktu posting video (dari window scrape terakhir)
+  createTimeMax   Int      @default(0)
+  /// Bucket window scrape: 1=36jam(Kemarin) 2=7d 3=15d 4=30d 10..5=day:2..day:7
+  windowBucket    Int      @default(0)
+  postedAt        DateTime
+  firstSeenAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // v6: unik per (video, negara) — video yang trending di 2 negara = 2 baris
+  // (anti kontaminasi lintas negara: scrape negara A tidak menimpa data negara B)
+  @@unique([tiktokId, country])
+
+  @@index([country])
+  @@index([category])
+  @@index([trendingScore])
+  @@index([sales])
+  @@index([views])
+  @@index([gmv])
+  @@index([createTimeMax])
+  @@index([country, sales])
+  /// Query per-hari (window=day:N): equality windowBucket + sort sales
+  @@index([windowBucket, sales])
+}
+
+model SyncState {
+  id         String   @id @default("singleton")
+  lastSyncAt DateTime
+  nextSyncAt DateTime
+  syncCount  Int      @default(0)
+  status     String   @default("idle")
+  lastError  String?
+}
+
+model SyncLog {
+  id         String   @id @default(cuid())
+  startedAt  DateTime
+  finishedAt DateTime?
+  status     String   @default("running")
+  fetched    Int      @default(0)
+  qualifying Int      @default(0)
+  upserted   Int      @default(0)
+  newVideos  Int      @default(0)
+  requests   Int      @default(0)
+  errors     String   @default("")
+  trigger    String   @default("scheduled")
+}
+
+// ── v6: Job queue & slice tracking (scope-driven scraping) ──────────────
+
+/// Satu unit pekerjaan scraping (global atau satu negara). Slice = unit retry.
+model ScrapeJob {
+  id              String    @id @default(cuid())
+  /// 'global' | 'country' | 'retry_failed'
+  scopeType       String
+  /// 'ALL' atau kode negara (mis. 'ID'); retry_failed = jobId sumber
+  scopeValue      String    @default("ALL")
+  /// v7 vocabulary: ready | running | held | completed | failed | cancelled
+  /// (v6 legacy rows: queued/paused — dimigrasi saat boot v7)
+  status          String    @default("ready")
+  /// manual | scheduled | ui | boot-resume
+  trigger         String    @default("manual")
+  /// prioritas antrian: 0=tinggi (klik UI), 5=retry, 10=normal (scheduler)
+  priority        Int       @default(10)
+  /// v7: instance pemilik klaim ('z7') — isolasi dari proses v6 zombie
+  owner           String?
+  totalSlices     Int       @default(0)
+  doneSlices      Int       @default(0)
+  failedSlices    Int       @default(0)
+  requests        Int       @default(0)
+  fetched         Int       @default(0)
+  qualifying      Int       @default(0)
+  upserted        Int       @default(0)
+  newVideos       Int       @default(0)
+  productsUpdated Int       @default(0)
+  pruned          Int       @default(0)
+  /// berapa kali job dilanjutkan setelah restart/crash
+  resumedCount    Int       @default(0)
+  pausedReason    String?
+  errorSummary    String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  lastHeartbeatAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Unit scraping terkecil: 1 negara × 1 kategori × 1 window bucket.
+/// Persisten → resume setelah restart, freshness per slice, dead-letter jelas.
+model ScrapeSlice {
+  id             String    @id @default(cuid())
+  country        String
+  categoryId     String
+  categoryName   String
+  /// 1=36jam 2=7d 3=15d 4=30d 10..5=day:2..day:7
+  bucket         Int
+  /// pending | running | done | failed | dead
+  status         String    @default("pending")
+  attempts       Int       @default(0)
+  lastError      String?
+  lastSuccessAt  DateTime?
+  lastJobId      String?
+  pagesScraped   Int       @default(0)
+  itemsUpserted  Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([country, categoryId, bucket])
+  @@index([status])
+  @@index([country, status])
+  @@index([lastSuccessAt])
+}
+
+/// Alert operasional untuk UI (session human-required, source down, dll).
+model Alert {
+  id         String    @id @default(cuid())
+  /// info | warning | critical
+  severity   String    @default("warning")
+  /// session | source | system | data
+  type       String
+  message    String
+  meta       String    @default("")
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([resolvedAt])
+  @@index([createdAt])
+}

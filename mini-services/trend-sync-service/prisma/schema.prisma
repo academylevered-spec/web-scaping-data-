@@ -1,0 +1,68 @@
+// Mirror dari /home/z/my-project/prisma/schema.prisma (sinkron saat schema utama berubah)
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model TrendVideo {
+  id              String   @id @default(cuid())
+  tiktokId        String   @unique
+  videoUrl        String
+  authorHandle    String
+  authorName      String?
+  authorAvatar    String?
+  thumbnail       String
+  caption         String
+  hashtags        String   @default("")
+  country         String
+  category        String
+  sourceCategory  String   @default("")
+  duration        String
+  durationSec     Int      @default(0)
+  views           Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  shares          Int      @default(0)
+  sales           Int      @default(0)
+  gmv             Float    @default(0)
+  trafficType     String   @default("organic")
+  isShopProduct   Boolean  @default(false)
+  shopUrl         String?
+  productTitle    String?
+  productPriceMin Float?
+  productPriceMax Float?
+  productSold     Int?
+  productImage    String?
+  trendingScore   Float    @default(0)
+  postedAt        DateTime
+  firstSeenAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([country])
+  @@index([category])
+  @@index([trendingScore])
+}
+
+model SyncState {
+  id         String   @id @default("singleton")
+  lastSyncAt DateTime
+  nextSyncAt DateTime
+  syncCount  Int      @default(0)
+  status     String   @default("idle")
+}
+
+model SyncLog {
+  id         String   @id @default(cuid())
+  startedAt  DateTime
+  finishedAt DateTime?
+  status     String   @default("running")
+  fetched    Int      @default(0)
+  upserted   Int      @default(0)
+  errors     String   @default("")
+  trigger    String   @default("scheduled")
+}
